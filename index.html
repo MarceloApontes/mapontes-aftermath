@@ -1,16 +1,37 @@
 <!doctype html>
 <html lang="pt-BR">
 <head>
-<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>MAPONTES: AFTERMATH — Protótipo TPS</title>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>MAPONTES: AFTERMATH — Etapa 024</title>
 <style>
-*{box-sizing:border-box}html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#111719;color:#f6f0df;font-family:system-ui,Arial,sans-serif}#game{width:100%;height:100%;display:block;touch-action:none}#hud{position:fixed;inset:0;pointer-events:none}#top{position:absolute;top:18px;left:22px;background:#101819cc;border:1px solid #d4b57f66;padding:14px 18px;border-radius:12px}#top strong{letter-spacing:.14em;color:#f1cc80}#top small{display:block;color:#c2c5bc;margin-top:3px}#status{position:absolute;bottom:23px;left:24px;background:#111a1bd9;border:1px solid #ffffff33;border-radius:10px;padding:12px 16px;line-height:1.7;font-size:14px}#help{position:absolute;right:22px;bottom:22px;background:#111a1bd9;padding:12px 16px;border-radius:10px;font-size:13px;line-height:1.7;max-width:330px}#reticle{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);font-size:24px;color:#fef4cf;filter:drop-shadow(1px 1px 2px #000);display:none}#banner{position:absolute;top:17%;left:50%;transform:translateX(-50%);background:#141c1de8;border:1px solid #dbb779;padding:15px 22px;border-radius:8px;text-align:center;white-space:pre-line;max-width:90vw}#loading{position:absolute;inset:0;background:#0b1015eb;display:flex;justify-content:center;align-items:center;text-align:center;font-size:20px}#loading p{font-size:13px;color:#b9b8ad}#error{color:#ffa6a6}#touch{display:none}@media(max-width:700px){#help{display:none}#top{font-size:12px}#status{font-size:12px}}
+html,body{height:100%;width:100%;margin:0;overflow:hidden;background:#10191b}
+#game{display:block;width:100%;height:100%;touch-action:none}
+#fatal{display:none;position:fixed;inset:20px auto auto 20px;max-width:85vw;background:#311;color:white;padding:16px;border:1px solid #f88;border-radius:8px;z-index:999;font:14px system-ui}
 </style>
 </head>
 <body>
 <canvas id="game"></canvas>
-<div id="hud"><div id="top"><strong>MAPONTES: AFTERMATH</strong><small>Mapa 1 · Cidade Urbana — Condomínio · Protótipo</small></div><div id="status">Carregando…</div><div id="reticle">＋</div><div id="help">WASD — movimentar · Shift — correr<br>Mouse — câmera (clique no jogo para capturar)<br>Botão direito — mirar sobre o ombro<br>1 clique — soco · 2 cliques rápidos — chute<br>R — reiniciar<br>Esc — liberar mouse</div><div id="banner">Protótipo de câmera híbrida e IA civil</div><div id="loading">Carregando personagens…<p>Babylon.js + GLBs originais Tripo3D</p></div></div>
+<div id="fatal"></div>
 <script src="https://cdn.babylonjs.com/babylon.js"></script>
 <script src="https://cdn.babylonjs.com/loaders/babylonjs.loaders.min.js"></script>
-<script type="module" src="./src/main.js?v=2"></script>
-</body></html>
+<script type="module">
+const canvas=document.querySelector('#game');
+const engine=new BABYLON.Engine(canvas,true,{preserveDrawingBuffer:true,stencil:true});
+window.engine=engine;
+try {
+ const {createScene}=await import('./src/playground-etapa-024.js?v=024');
+ const scene=await createScene();
+ if(!scene)throw new Error('createScene não retornou uma cena.');
+ engine.runRenderLoop(()=>scene.render());
+ window.addEventListener('resize',()=>engine.resize());
+ console.info('[AFTERMATH] Etapa 024 iniciada com sucesso');
+} catch(error) {
+ console.error('[AFTERMATH] Falha ao iniciar jogo',error);
+ const box=document.querySelector('#fatal');
+ box.style.display='block';
+ box.textContent='Falha ao iniciar o MAPONTES: AFTERMATH — '+(error?.message||error);
+}
+</script>
+</body>
+</html>
