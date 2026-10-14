@@ -26,6 +26,7 @@ for(let i=0;i<6;i++)for(const side of [-1,1]){
 }
 const player={hp:100,pos:new B.Vector3(0,0,-7),model:null,anims:null,state:'idle',dead:false};
 const enemies=[];const keys=new Set();let yaw=0,pitch=.12,aim=false,shotCooldown=0,attackFlash=0;
+let clickTimer=null,lastClickAt=0;const DOUBLE_CLICK_MS=260;
 const vlerp=(a,b,t)=>B.Vector3.Lerp(a,b,t);
 const clamp=(n,a,b)=>Math.min(b,Math.max(a,n));
 // GLBs com animações nomeadas pelo Tripo. Evitamos pressupor nomes de ossos.
@@ -41,11 +42,26 @@ async function loadActor(filename,pos,scale=1){
  const groups=result.animationGroups;
  return {root,groups,active:null,body:result.meshes};
 }
-function animate(actor,type,once=false){if(!actor)return;
- const picks={idle:['standing pose','ficar parado','look_around'],walk:['walk.','andar pra frente'],run:['run.','correr.'],attack:['box_','front_kick','hit_to_body'],death:['death animation','video game death']};
+function animate(actor,type,once=false){
+ if(!actor)return;
+ const picks={
+  idle:['ficar parado em pé','standing pose','look_around','standing glance'],
+  walk:['walk.','andar pra frente'],
+  run:['run.','correr.'],
+  punch:['box_','hit_to_body'],
+  kick:['front_kick','chute_frontal'],
+  death:['realistic third-person video game death','death animation']
+ };
+ const now=performance.now();
+ if(type!=='death' && actor.lockUntil && now<actor.lockUntil && type!=='punch' && type!=='kick')return;
  const group=findAnimation(actor.groups,picks[type]||picks.idle);
- if(!group||actor.active===group)return;
- actor.groups.forEach(g=>{if(g!==group)g.stop()});actor.active=group;
+ if(!group || (actor.active===group && !once && group.isPlaying))return;
+ actor.groups.forEach(g=>g.stop());
+ actor.active=group;
+ if(type==='death')actor.lockUntil=Infinity;
+ else if(type==='punch')actor.lockUntil=now+620;
+ else if(type==='kick')actor.lockUntil=now+850;
+ else actor.lockUntil=0;
  group.start(!once,1,group.from,group.to,false);
 }
 function say(message,ms=2300){ui.banner.textContent=message;ui.banner.style.display='block';clearTimeout(say.timer);say.timer=setTimeout(()=>ui.banner.style.display='none',ms);}
@@ -67,18 +83,45 @@ canvas.addEventListener('contextmenu',e=>e.preventDefault());
 window.addEventListener('keydown',e=>{if(['Space','ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.code))e.preventDefault();keys.add(e.code);if(e.code==='KeyR')location.reload();});
 window.addEventListener('keyup',e=>keys.delete(e.code));
 window.addEventListener('blur',()=>{keys.clear();aim=false;});
-canvas.addEventListener('pointerdown',e=>{if(e.button===2)aim=true;if(e.button===0){if(document.pointerLockElement!==canvas)canvas.requestPointerLock?.();else attack();}});
+canvas.addEventListener('pointerdown',e=>{
+ if(e.button===2){aim=true;return;}
+ if(e.button!==0)return;
+ if(document.pointerLockElement!==canvas)canvas.requestPointerLock?.();
+ const now=performance.now();
+ if(clickTimer && now-lastClickAt<=DOUBLE_CLICK_MS){
+  clearTimeout(clickTimer);clickTimer=null;lastClickAt=0;attack('kick');
+ } else {
+  if(clickTimer)clearTimeout(clickTimer);
+  lastClickAt=now;
+  clickTimer=setTimeout(()=>{clickTimer=null;attack('punch');},DOUBLE_CLICK_MS);
+ }
+});
 window.addEventListener('pointerup',e=>{if(e.button===2)aim=false;});
 window.addEventListener('mousemove',e=>{if(document.pointerLockElement!==canvas)return;yaw-=e.movementX*.0025;pitch=clamp(pitch+e.movementY*.002,-.4,.7);});
-function attack(){if(!player.model||player.dead||shotCooldown>0)return;shotCooldown=.55;attackFlash=.17;animate(player.model,'attack',true);
- const origin=camera.position;const forward=camera.getForwardRay(100).direction;
+function attack(kind='punch'){
+ if(!player.model||player.dead||shotCooldown>0)return;
+ shotCooldown=kind==='kick'?.8:.52;
+ attackFlash=kind==='kick'?.85:.65;
+ animate(player.model,kind,true);
+ const forward=new B.Vector3(Math.sin(yaw),0,Math.cos(yaw));
  let chosen=null,best=Infinity;
- for(const e of enemies){if(!aliveEnemy(e))continue;
-  const center=e.pos.add(new B.Vector3(0,1,0));const d=center.subtract(origin);const projection=B.Vector3.Dot(d,forward);
-  const perpendicular=d.subtract(forward.scale(projection)).length();
-  if(projection>0&&projection<3.7&&perpendicular<1.25&&projection<best){chosen=e;best=projection;}
+ for(const e of enemies){
+  if(!aliveEnemy(e))continue;
+  const toward=e.pos.subtract(player.pos);
+  const distance=toward.length();
+  if(distance> (kind==='kick'?2.65:2.25) || distance<.01)continue;
+  const facing=B.Vector3.Dot(toward.scale(1/distance),forward);
+  if(facing<.28)continue;
+  if(distance<best){chosen=e;best=distance;}
  }
- if(chosen){chosen.hp-=40;chosen.hitTime=.28;say(`${chosen.name} atingid${chosen.name==='Maria'?'a':'o'}!`,650);if(chosen.hp<=0){animate(chosen.model,'death',true);say(`${chosen.name} derrotad${chosen.name==='Maria'?'a':'o'}!`,1500);}}
+ if(chosen){
+  chosen.hp-=kind==='kick'?45:25;chosen.hitTime=.28;
+  say(`${kind==='kick'?'Chute':'Soco'} em ${chosen.name}!`,650);
+  if(chosen.hp<=0){
+   animate(chosen.model,'death',true);
+   say(`${chosen.name} derrotad${chosen.name==='Maria'?'a':'o'}!`,1500);
+  }
+ }
 }
 function update(dt){if(!player.model)return;
  shotCooldown=Math.max(0,shotCooldown-dt);attackFlash=Math.max(0,attackFlash-dt);
@@ -86,8 +129,8 @@ function update(dt){if(!player.model)return;
  const x=Number(keys.has('KeyD'))-Number(keys.has('KeyA'));const z=Number(keys.has('KeyW'))-Number(keys.has('KeyS'));
  const move=f.scale(z).add(r.scale(x));const moving=move.lengthSquared()>.001;
  if(!player.dead){
-  if(moving){move.normalize();const running=keys.has('ShiftLeft')||keys.has('ShiftRight');player.pos.addInPlace(move.scale((running?6.1:3.2)*dt));inBounds(player.pos);spinTo(player.model.root,aim?f:move,dt);if(attackFlash<=0)animate(player.model,running?'run':'walk');}
-  else {spinTo(player.model.root,aim?f:new B.Vector3(Math.sin(player.model.root.rotation.y),0,Math.cos(player.model.root.rotation.y)),dt);if(attackFlash<=0)animate(player.model,'idle');}
+  if(moving){move.normalize();const running=keys.has('ShiftLeft')||keys.has('ShiftRight');player.pos.addInPlace(move.scale((running?6.1:3.2)*dt));inBounds(player.pos);spinTo(player.model.root,f,dt);if(attackFlash<=0)animate(player.model,running?'run':'walk');}
+  else {spinTo(player.model.root,f,dt);if(attackFlash<=0)animate(player.model,'idle');}
  }
  player.model.root.position.copyFrom(player.pos);
  for(const e of enemies){if(!aliveEnemy(e))continue;
@@ -99,11 +142,11 @@ function update(dt){if(!player.model)return;
   e.model.root.position.copyFrom(e.pos);
  }
  // Câmera suavizada: mais afastada ao explorar; próxima ao ombro ao mirar.
- const viewDist=aim?2.45:5.8, height=aim?1.65:2.55,shoulder=aim?.68:0;
- const target=player.pos.add(new B.Vector3(shoulder,aim?1.48:1.65,0));
- const desired=player.pos.subtract(f.scale(viewDist)).add(r.scale(shoulder)).add(new B.Vector3(0,height+Math.sin(pitch)*viewDist*.65,0));
- camera.position.copyFrom(vlerp(camera.position,desired,clamp(dt*9,0,1)));
- camera.setTarget(target.add(f.scale(aim?7:2.8)).add(new B.Vector3(0,-Math.sin(pitch)*3.5,0)));
+ const viewDist=aim?2.15:3.15, height=aim?1.58:1.85,shoulder=aim?.62:0;
+ const desired=player.pos.subtract(f.scale(viewDist)).add(r.scale(shoulder)).add(new B.Vector3(0,height+Math.sin(pitch)*viewDist*.45,0));
+ camera.position.copyFrom(vlerp(camera.position,desired,clamp(dt*12,0,1)));
+ const target=player.pos.add(f.scale(aim?3.8:1.5)).add(r.scale(aim?.42:0)).add(new B.Vector3(0,1.42-Math.sin(pitch)*2,0));
+ camera.setTarget(target);
  camera.fov+=( (aim?.65:.9)-camera.fov)*clamp(dt*10,0,1);
  ui.reticle.style.display=aim?'block':'none';
  ui.status.innerHTML=`<strong>ANTÔNIO</strong> · Vida: ${player.hp}/100<br>João: ${Math.max(0,enemies[0]?.hp??100)} HP · Maria: ${Math.max(0,enemies[1]?.hp??100)} HP<br>Modo: ${aim?'MIRA SOBRE O OMBRO':'EXPLORAÇÃO'} · ${player.dead?'DERROTADO':'SOBREVIVENDO'}`;
